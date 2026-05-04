@@ -1,25 +1,26 @@
 #include <iostream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <stdio.h>
 #include <string.h>
-#pragma comment(lib, "ws2_32.lib")
+
+#pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
 
 int main() {
-
-    const int server_port = 5555;
-
-    // Initialize Winsock
+    // 1. Initialize Winsock
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        cerr << "WSAStartup failed" << endl;
+        cout << "WSAStartup failed." << endl;
         return 1;
     }
 
+    const int server_port = 8080;
+
     SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == INVALID_SOCKET) {
-        cerr << "error creating socket: " << WSAGetLastError() << endl;
+        cout << "error creating socket: " << WSAGetLastError() << endl;
         WSACleanup();
         return 1;
     }
@@ -31,50 +32,45 @@ int main() {
     sin.sin_port = htons(server_port);
 
     if (bind(sock, (struct sockaddr *) &sin, sizeof(sin)) == SOCKET_ERROR) {
-        cerr << "error binding socket: " << WSAGetLastError() << endl;
-        closesocket(sock);
-        WSACleanup();
-        return 1;
+        cout << "error binding socket: " << WSAGetLastError() << endl;
     }
 
     if (listen(sock, 5) == SOCKET_ERROR) {
-        cerr << "error listening: " << WSAGetLastError() << endl;
-        closesocket(sock);
-        WSACleanup();
-        return 1;
+        cout << "error listening to a socket: " << WSAGetLastError() << endl;
     }
-
-    cout << "[SERVER] TCP listening on port " << server_port << "..." << endl;
 
     struct sockaddr_in client_sin;
     int addr_len = sizeof(client_sin);
-    SOCKET client_sock = accept(sock, (struct sockaddr *) &client_sin, &addr_len);
+    
+    SOCKET client_sock = accept(sock,  (struct sockaddr *) &client_sin,  &addr_len);
     if (client_sock == INVALID_SOCKET) {
-        cerr << "error accepting client: " << WSAGetLastError() << endl;
-        closesocket(sock);
-        WSACleanup();
-        return 1;
+        cout << "error accepting client: " << WSAGetLastError() << endl;
     }
 
     char buffer[4096];
     int expected_data_len = sizeof(buffer);
+    
     int read_bytes = recv(client_sock, buffer, expected_data_len, 0);
     if (read_bytes == 0) {
-        cout << "Connection closed by client." << endl;
-    } else if (read_bytes == SOCKET_ERROR) {
-        cerr << "error receiving: " << WSAGetLastError() << endl;
-    } else {
+        cout << "connection closed by client" << endl;
+    }
+    else if (read_bytes == SOCKET_ERROR) {
+        cout << "error reading from socket" << endl;
+    }
+    else {
         buffer[read_bytes] = '\0';
         cout << buffer << endl;
-
-        int sent_bytes = send(client_sock, buffer, read_bytes, 0);
-        if (sent_bytes == SOCKET_ERROR) {
-            cerr << "error sending to client: " << WSAGetLastError() << endl;
-        }
     }
 
+    int sent_bytes = send(client_sock, buffer, read_bytes, 0);
+    if (sent_bytes == SOCKET_ERROR) {
+        cout << "error sending to client" << endl;
+    }
+
+    // 2. Cleanup
     closesocket(client_sock);
     closesocket(sock);
     WSACleanup();
+
     return 0;
 }

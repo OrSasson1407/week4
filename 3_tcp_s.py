@@ -1,35 +1,42 @@
 import socket
-from datetime import datetime  # NEW: for timestamps
 
+# Create a TCP socket
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# NEW: allow reuse of port immediately after restart (avoids "Address already in use")
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
+# Listen on all available interfaces
 server_ip = ''
-server_port = 12345
+
+# CHANGE: Updated the listening port from 12345 to 8080
+server_port = 8080 
+
+# Bind the socket and start listening for up to 5 concurrent pending connections
 server.bind((server_ip, server_port))
 server.listen(5)
 
-print(f"[SERVER] TCP server listening on port {server_port}")  # NEW
-
-client_count = 0  # NEW: track total clients served
-
+# Infinite loop to keep the server running
 while True:
+    # Accept a new client connection (this blocks until a client connects)
+    # Returns a new dedicated socket for this client and their address
     client_socket, client_address = server.accept()
-    client_count += 1  # NEW
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Client #{client_count} connected from {client_address}")  # NEW
-
+    print('Connection from: ', client_address)
+    
+    # Receive the first message from the client (up to 1024 bytes)
     data = client_socket.recv(1024)
+    
+    # Loop to handle continuous messages from the same client
+    # Breaks when data is empty (meaning the client disconnected)
     while not data.decode('utf-8') == '':
-        decoded = data.decode('utf-8')
-        print(f'  Received: {decoded}')
-
-        # CHANGED: response now includes message length info
-        response = f"[{len(decoded)} chars] {decoded.upper()}"
-        client_socket.send(bytes(response, 'utf-8'))
-
+        print('Received: ', data.decode('utf-8'))
+        
+        # CHANGE: Convert data to uppercase AND append " [ACK]" before sending
+        response = data.upper() + b" [ACK]"
+        client_socket.send(response)
+        
+        # Wait for the next message from this client
         data = client_socket.recv(1024)
 
-    print(f'  Client #{client_count} disconnected')  # CHANGED: include client number
+    # Print status when the inner loop breaks (client disconnected)
+    print('Client disconnected')
+    
+    # Close the dedicated client socket
     client_socket.close()
