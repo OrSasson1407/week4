@@ -1,10 +1,8 @@
 #include <iostream>
-#include <sys/socket.h>
-#include <stdio.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <string.h>
+#pragma comment(lib, "ws2_32.lib")   // link Winsock library automatically
 
 using namespace std;
 
@@ -12,9 +10,18 @@ int main() {
 
     const int server_port = 5555;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("error creating socket");
+    // Windows requires initializing Winsock before any socket call
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "WSAStartup failed" << endl;
+        return 1;
+    }
+
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == INVALID_SOCKET) {
+        cerr << "error creating socket: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
     }
 
     struct sockaddr_in sin;
@@ -23,39 +30,32 @@ int main() {
     sin.sin_addr.s_addr = INADDR_ANY;
     sin.sin_port = htons(server_port);
 
-    if (bind(sock, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-        perror("error binding to socket");
+    if (bind(sock, (struct sockaddr *) &sin, sizeof(sin)) == SOCKET_ERROR) {
+        cerr << "error binding to socket: " << WSAGetLastError() << endl;
+        closesocket(sock);
+        WSACleanup();
+        return 1;
     }
 
-    // NEW: print startup message
-    cout << "[SERVER] Listening on port " << server_port << "..." << endl;
+    cout << "[SERVER] UDP listening on port " << server_port << "..." << endl;
 
-    // CHANGED: wrap in a loop so server handles multiple clients
-    int message_count = 0;  // NEW: message counter
-    while (true) {
-        struct sockaddr_in from;
-        unsigned int from_len = sizeof(struct sockaddr_in);
-        char buffer[4096];
-
-        int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &from, &from_len);
-        if (bytes < 0) {
-            perror("error reading from socket");
-            continue;  // NEW: don't crash, keep going
-        }
-
-        buffer[bytes] = '\0';  // NEW: null-terminate so string prints cleanly
-        message_count++;       // NEW: count messages
-
-        // NEW: print client IP address using inet_ntoa
-        cout << "[MSG #" << message_count << "] From " 
-             << inet_ntoa(from.sin_addr) << ": " << buffer << endl;
+    struct sockaddr_in from;
+    int from_len = sizeof(struct sockaddr_in);
+    char buffer[4096];
+    int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &from, &from_len);
+    if (bytes == SOCKET_ERROR) {
+        cerr << "error reading from socket: " << WSAGetLastError() << endl;
+    } else {
+        buffer[bytes] = '\0';
+        cout << "The client sent: " << buffer << endl;
 
         int sent_bytes = sendto(sock, buffer, bytes, 0, (struct sockaddr *) &from, sizeof(from));
-        if (sent_bytes < 0) {
-            perror("error writing to socket");
+        if (sent_bytes == SOCKET_ERROR) {
+            cerr << "error writing to socket: " << WSAGetLastError() << endl;
         }
     }
 
-    close(sock);
+    closesocket(sock);   // Windows uses closesocket() instead of close()
+    WSACleanup();        // Windows requires cleanup at the end
     return 0;
 }

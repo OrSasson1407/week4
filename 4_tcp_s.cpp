@@ -1,10 +1,8 @@
 #include <iostream>
-#include <sys/socket.h>
-#include <stdio.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <string.h>
+#pragma comment(lib, "ws2_32.lib")
 
 using namespace std;
 
@@ -12,14 +10,19 @@ int main() {
 
     const int server_port = 5555;
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        perror("error creating socket");
+    // Initialize Winsock
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "WSAStartup failed" << endl;
+        return 1;
     }
 
-    // NEW: allow port reuse so server can restart quickly
-    int opt = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+        cerr << "error creating socket: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return 1;
+    }
 
     struct sockaddr_in sin;
     memset(&sin, 0, sizeof(sin));
@@ -27,59 +30,51 @@ int main() {
     sin.sin_addr.s_addr = INADDR_ANY;
     sin.sin_port = htons(server_port);
 
-    if (bind(sock, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-        perror("error binding socket");
+    if (bind(sock, (struct sockaddr *) &sin, sizeof(sin)) == SOCKET_ERROR) {
+        cerr << "error binding socket: " << WSAGetLastError() << endl;
+        closesocket(sock);
+        WSACleanup();
+        return 1;
     }
 
-    if (listen(sock, 5) < 0) {
-        perror("error listening to a socket");
+    if (listen(sock, 5) == SOCKET_ERROR) {
+        cerr << "error listening: " << WSAGetLastError() << endl;
+        closesocket(sock);
+        WSACleanup();
+        return 1;
     }
 
-    cout << "[SERVER] TCP server listening on port " << server_port << endl;  // NEW
+    cout << "[SERVER] TCP listening on port " << server_port << "..." << endl;
 
-    // CHANGED: loop to accept multiple clients one after another
-    int client_count = 0;
-    while (true) {
-        struct sockaddr_in client_sin;
-        unsigned int addr_len = sizeof(client_sin);
-        int client_sock = accept(sock, (struct sockaddr *) &client_sin, &addr_len);
-
-        if (client_sock < 0) {
-            perror("error accepting client");
-            continue;
-        }
-
-        client_count++;
-        // NEW: print the connecting client's IP
-        cout << "[CLIENT #" << client_count << "] Connected from "
-             << inet_ntoa(client_sin.sin_addr) << endl;
-
-        char buffer[4096];
-        int expected_data_len = sizeof(buffer);
-        int read_bytes = recv(client_sock, buffer, expected_data_len, 0);
-
-        if (read_bytes == 0) {
-            cout << "  Client disconnected immediately." << endl;  // NEW
-        }
-        else if (read_bytes < 0) {
-            perror("error receiving from client");
-        }
-        else {
-            buffer[read_bytes] = '\0';  // NEW: null-terminate
-            cout << "  Received: " << buffer << endl;  // NEW: indented log
-
-            int sent_bytes = send(client_sock, buffer, read_bytes, 0);
-            if (sent_bytes < 0) {
-                perror("error sending to client");
-            } else {
-                cout << "  Echoed " << sent_bytes << " bytes back." << endl;  // NEW
-            }
-        }
-
-        close(client_sock);
-        cout << "[CLIENT #" << client_count << "] Disconnected." << endl;  // NEW
+    struct sockaddr_in client_sin;
+    int addr_len = sizeof(client_sin);
+    SOCKET client_sock = accept(sock, (struct sockaddr *) &client_sin, &addr_len);
+    if (client_sock == INVALID_SOCKET) {
+        cerr << "error accepting client: " << WSAGetLastError() << endl;
+        closesocket(sock);
+        WSACleanup();
+        return 1;
     }
 
-    close(sock);
+    char buffer[4096];
+    int expected_data_len = sizeof(buffer);
+    int read_bytes = recv(client_sock, buffer, expected_data_len, 0);
+    if (read_bytes == 0) {
+        cout << "Connection closed by client." << endl;
+    } else if (read_bytes == SOCKET_ERROR) {
+        cerr << "error receiving: " << WSAGetLastError() << endl;
+    } else {
+        buffer[read_bytes] = '\0';
+        cout << buffer << endl;
+
+        int sent_bytes = send(client_sock, buffer, read_bytes, 0);
+        if (sent_bytes == SOCKET_ERROR) {
+            cerr << "error sending to client: " << WSAGetLastError() << endl;
+        }
+    }
+
+    closesocket(client_sock);
+    closesocket(sock);
+    WSACleanup();
     return 0;
 }
